@@ -4,7 +4,9 @@ A React SPA plus a small Express API that demonstrates a modern customer identit
 passwordless login, social login, token enrichment, an email-verification gate, step-up MFA, a
 scope-protected API, and an identifier-only user profile.
 
-Sequence diagram of every flow: [docs/pizza42-flows.mmd](docs/pizza42-flows.mmd)
+Architecture / sequence diagram (Lucidchart export): [docs/pizza42-architecture.pdf](docs/pizza42-architecture.pdf)
+
+Diagram source of every flow: [docs/pizza42-flows.mmd](docs/pizza42-flows.mmd)
 (Mermaid; import into Lucidchart via *Insert > Diagram as code > Mermaid*).
 
 ## Requirements coverage
