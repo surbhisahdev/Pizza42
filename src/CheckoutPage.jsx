@@ -19,7 +19,6 @@ export default function CheckoutPage() {
   const [status, setStatus] = useState('checking'); // checking | needs-login | stepup | failed | ready | done
   const [receipt, setReceipt] = useState(null);
   const [orderError, setOrderError] = useState(null);
-  const [debug, setDebug] = useState(null); // TEMP: remove once checkout verification works
 
   useEffect(() => {
     if (isLoading) return;
@@ -32,12 +31,6 @@ export default function CheckoutPage() {
       // `user` from the SDK strips `amr`, so read the raw ID token claims.
       const claims = await getIdTokenClaims();
       if (cancelled) return;
-      setDebug({
-        amr: claims?.amr,
-        email_verified: claims?.email_verified,
-        custom_email_verified: claims?.['https://pizza42/email_verified'],
-        acr: claims?.acr,
-      });
       const emailVerified =
         claims?.email_verified === true || claims?.['https://pizza42/email_verified'] === true;
       // MFA counts if done in this session: either `amr` has it (challenged just now) or the
@@ -118,9 +111,7 @@ export default function CheckoutPage() {
     return (
       <section className="cart-page empty">
         <h2>We couldn't verify your identity</h2>
-        <p>Email verification or extra verification (MFA) didn't complete. Please try again.</p>
-        <pre style={{ textAlign: 'left', fontSize: 12 }}>{JSON.stringify(debug, null, 2)}</pre>
-        <button
+        <p>Email verification or extra verification (MFA) didn't complete. Please try again.</p>        <button
           className="add as-link"
           onClick={() => {
             [FLAG_EMAIL, FLAG_MFA].forEach((k) => sessionStorage.removeItem(k));

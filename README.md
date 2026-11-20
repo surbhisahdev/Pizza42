@@ -135,9 +135,9 @@ npm start                   # http://localhost:3001
 | `curl -i -X POST localhost:3001/orders` | 401 (no token). |
 | Token without `write:orders` | 403 `insufficient_scope`. |
 
-If the checkout failure screen appears, it prints the token's `amr`, `email_verified`, the custom
-email claim and `acr`. This is a temporary debug aid (marked TEMP in `CheckoutPage.jsx`); remove it
-before sharing the demo.
+If the checkout failure screen appears, inspect the ID token claims (`amr`, `email_verified`,
+`https://pizza42/email_verified`, `https://pizza42.com/mfa_done`) in the browser devtools or the
+Auth0 tenant logs to see which gate did not pass.
 
 ## Known gaps and trade-offs
 
