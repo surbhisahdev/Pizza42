@@ -1,0 +1,18 @@
+# Render Blueprint: deploys the Pizza 42 order API (api/).
+# Render dashboard > New > Blueprint > pick this repo.
+services:
+  - type: web
+    name: pizza42-api
+    runtime: node
+    rootDir: api
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: AUTH0_DOMAIN
+        value: yumm-pizzza.oktademo.cloud
+      - key: AUTH0_AUDIENCE
+        value: https://get-pizza42
+      - key: ALLOWED_ORIGIN
+        sync: false # set to the Vercel URL after the SPA is deployed (no trailing slash)
