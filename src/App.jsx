@@ -6,6 +6,7 @@ import Welcome from './Welcome.jsx';
 import Menu from './Menu.jsx';
 import CartPage from './CartPage.jsx';
 import CheckoutPage from './CheckoutPage.jsx';
+import TokenPanel from './TokenPanel.jsx';
 
 // Tiny hash router: "#/cart" shows the cart, anything else shows the home page.
 const route = () => window.location.hash;
@@ -41,6 +42,7 @@ export default function App() {
           <Menu />
         </>
       )}
+      <TokenPanel />
     </CartProvider>
   );
 }
