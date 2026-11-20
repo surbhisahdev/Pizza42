@@ -1,6 +1,7 @@
-# Render Blueprint: deploys the Pizza 42 order API (api/).
+# Render Blueprint: deploys the whole Pizza 42 PoC (API + SPA) from this repo.
 # Render dashboard > New > Blueprint > pick this repo.
 services:
+  # Order API (api/)
   - type: web
     name: pizza42-api
     runtime: node
@@ -15,4 +16,20 @@ services:
       - key: AUTH0_AUDIENCE
         value: https://get-pizza42
       - key: ALLOWED_ORIGIN
-        sync: false # set to the Vercel URL after the SPA is deployed (no trailing slash)
+        sync: false # the SPA's URL, no trailing slash (set after the first deploy)
+
+  # React SPA (Vite build, hash routing so no rewrite rules needed)
+  - type: web
+    name: pizza42-app
+    runtime: static
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_AUTH0_DOMAIN
+        value: yumm-pizzza.oktademo.cloud
+      - key: VITE_AUTH0_AUDIENCE
+        value: https://get-pizza42
+      - key: VITE_AUTH0_CLIENT_ID
+        sync: false # SPA Client ID from the Auth0 dashboard
+      - key: VITE_API_URL
+        sync: false # the API's Render URL, no trailing slash
