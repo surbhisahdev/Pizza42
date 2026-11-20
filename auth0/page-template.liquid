@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="{{ locale }}">
+  <head>
+    {%- auth0:head -%}
+    <title>{{ prompt.screen.texts.pageTitle | default: "Pizza 42" }}</title>
+    <style>
+      :root { --brand: #e8431f; --brand-hover: #ff5530; --dark: #1a0f0a; }
+      html, body { height: 100%; margin: 0; }
+      body {
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        background: var(--dark);
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        min-height: 100vh; position: relative; overflow-x: hidden;
+      }
+      /* Warm, slowly "zooming" backdrop to echo the app's hero */
+      body::before {
+        content: ""; position: fixed; inset: 0; z-index: 0;
+        background:
+          radial-gradient(circle at 25% 20%, rgba(232,67,31,.55), transparent 55%),
+          radial-gradient(circle at 80% 85%, rgba(255,170,60,.40), transparent 50%),
+          linear-gradient(135deg, #2b140c, #1a0f0a);
+        animation: zoom 14s ease-in-out infinite alternate;
+      }
+      @keyframes zoom { from { transform: scale(1); } to { transform: scale(1.2); } }
+      @media (prefers-reduced-motion: reduce) { body::before { animation: none; } }
+
+      .brand {
+        position: relative; z-index: 1; color: #fff; font-size: 2rem;
+        font-weight: 800; letter-spacing: .5px; margin-bottom: 1.25rem;
+        text-shadow: 0 4px 20px rgba(0,0,0,.5);
+      }
+      .brand small { display: block; font-size: .95rem; font-weight: 500; opacity: .85; text-align: center; margin-top: .25rem; }
+
+      .card {
+        position: relative; z-index: 1; width: 100%; max-width: 420px;
+        border-radius: 18px; box-shadow: 0 20px 60px rgba(0,0,0,.55);
+      }
+      /* Universal Login widget container */
+      .card > div, .card .ulp-container { border-radius: 18px; }
+      .foot { position: relative; z-index: 1; color: #fff; opacity: .6; font-size: .8rem; margin-top: 1.25rem; }
+    </style>
+  </head>
+  <body>
+    <div class="brand">🍕 Pizza 42<small>Hot, fresh &amp; fast.</small></div>
+    <div class="card">
+      {%- auth0:widget -%}
+    </div>
+    <div class="foot">© Pizza 42</div>
+  </body>
+</html>

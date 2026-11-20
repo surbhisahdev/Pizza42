@@ -1,0 +1,203 @@
+sequenceDiagram
+    actor U as Customer
+    participant SPA as Pizza 42 SPA<br/>(React, localhost:5173)
+    participant UL as Auth0 Universal Login<br/>(yumm-pizzza.oktademo.cloud)
+    participant PRE as Pre-User-Registration Action<br/>(save-name-to-metadata)
+    participant PL as Post-Login Actions<br/>(mfa prompt, Enrich tokens, Assign customer id,<br/>verify email, stepup mfa)
+    participant GOOG as Google (social IdP)
+    participant MFA as Auth0 MFA (Guardian)<br/>OTP / SMS / WebAuthn
+    participant FORM as Auth0 Form + Flow<br/>(Email OTP verification)
+    participant MGMT as Auth0 Management API
+    participant API as Pizza 42 API<br/>(Express, :3001)
+
+    %% ============ 1. NOT LOGGED IN ============
+    Note over U,API: 1. NOT LOGGED-IN JOURNEY (browse freely, login only needed at checkout)
+    U->>SPA: Open site, browse menu
+    SPA->>UL: Silent auth: GET /authorize prompt=none (hidden iframe)
+    UL-->>SPA: login_required (logged as "fsa", expected, not an error)
+    SPA-->>U: Show menu + Log in / Sign up buttons + Cart
+    U->>SPA: Add pizzas to cart (kept in sessionStorage)
+    U->>SPA: Open #/cart, click Checkout (#/checkout)
+    SPA->>SPA: isAuthenticated = false
+    SPA-->>U: "Log in to place your order. Your cart will be waiting."
+    U->>SPA: Click Log in
+    SPA->>UL: loginWithRedirect, appState.returnTo = #/checkout
+    Note over U,UL: continues in section 3 (login) or 2 (signup); user lands back on #/checkout with cart intact
+
+    %% ============ 2. SIGN UP ============
+    Note over U,API: 2. SIGN UP (new customer)
+    U->>SPA: Click Sign up
+    SPA->>UL: GET /authorize screen_hint=signup (Authorization Code + PKCE)
+    UL-->>U: Signup page (custom template: first name, last name, email, password or passkey, Google)
+    alt Email + password / passkey (database connection)
+        U->>UL: Submit signup form
+        UL->>PRE: onExecutePreUserRegistration
+        PRE->>PRE: Require ulp-first-name and ulp-last-name (server-side)
+        alt names missing
+            PRE-->>UL: api.access.deny(missing_name)
+            UL-->>U: Error, stay on signup
+        else names present
+            PRE->>UL: setUserMetadata(first_name, last_name)
+            UL->>UL: Create user (email_verified = false)
+        end
+    else Google social signup
+        U->>UL: Click Continue with Google
+        UL->>GOOG: OAuth redirect
+        GOOG-->>UL: Profile (name, email, email_verified)
+        UL->>UL: Create user from Google profile
+    end
+    opt Welcome email (optional, NOT configured in this repo)
+        UL-->>U: Auth0 welcome email template (Branding > Email Templates)
+    end
+    Note over UL,PL: signup continues straight into the login pipeline in section 3
+
+    %% ============ 3. LOGIN ============
+    Note over U,API: 3. LOGIN (returning customer, or continuation of signup)
+    alt Password login
+        U->>UL: Email + password
+    else Passkey / WebAuthn login (passwordless)
+        U->>UL: Choose passkey, biometric or device PIN
+    else Google login
+        U->>UL: Continue with Google
+        UL->>GOOG: OAuth
+        GOOG-->>UL: Identity
+    end
+    UL->>PL: Post-login Actions run in order
+
+    Note over PL: Action 1: "mfa prompt" (login-time MFA policy)
+    PL->>PL: Read event.authentication.methods
+    alt method is passkey (already phishing-resistant, multi-factor)
+        PL->>PL: Skip MFA
+    else method is federated (Google) and SOCIAL_NEEDS_MFA = false
+        PL->>PL: Skip MFA
+    else MFA already done in this session
+        PL->>PL: Skip MFA
+    else password login, no factor enrolled (first signup / first login)
+        PL->>MFA: enrollWithAny(otp, phone) = MFA SIGNUP
+        MFA-->>U: Set up a factor (authenticator app code or SMS number)
+        U->>MFA: Complete enrollment and first challenge
+        MFA-->>PL: mfa recorded in session
+        PL->>MGMT: setUserMetadata(firstTime = false)
+    else password login, factor already enrolled
+        PL->>MFA: challengeWithAny(otp, phone)
+        MFA-->>U: Enter code
+        U->>MFA: Code
+        MFA-->>PL: mfa recorded in session
+    end
+
+    Note over PL: Action 2: "Enrich tokens" (marketing data)
+    PL->>PL: ID token claims: namespace/email, firstName, lastName<br/>(to add: mock segment, e.g. loyalty tier)
+    Note over PL: Action 3: "Assign customer id" (architecture integrity)
+    PL->>PL: Read app_metadata.pizza42_customer_id
+    opt no id yet (first login only)
+        PL->>MGMT: setAppMetadata(pizza42_customer_id = p42_uuid)
+    end
+    PL->>PL: Add namespace/pizza42_customer_id to ID token and access token
+    Note over PL: Action 4 "verify email" and Action 5 "stepup mfa" only fire on checkout ACRs (sections 5 and 6)
+    PL-->>UL: Done
+    UL-->>SPA: 302 redirect_uri?code=...&state=...
+    SPA->>UL: POST /oauth/token (code + PKCE verifier)
+    UL-->>SPA: ID token + access token (audience https://get-pizza42, scope write:orders)
+    SPA->>SPA: Tokens kept in memory (cacheLocation = memory)<br/>onRedirectCallback strips ?code, goes to returnTo
+    SPA-->>U: Header shows "Hi, First Last" (from ID token claims)
+
+    %% ============ 4. CHECKOUT GATE ============
+    Note over U,API: 4. CHECKOUT GATE (every visit to #/checkout)
+    U->>SPA: Open #/checkout
+    SPA->>SPA: getIdTokenClaims()
+    alt cart empty
+        SPA-->>U: "Your cart is empty"
+    else email not verified
+        Note over SPA,UL: go to section 5
+    else email verified but no MFA this session
+        Note over SPA,UL: go to section 6
+    else email verified and MFA done
+        SPA-->>U: Show address + card form (PaymentModal)
+        Note over U,API: go to section 7
+    end
+
+    %% ============ 5. EMAIL VERIFICATION GATE ============
+    Note over U,API: 5. EMAIL VERIFICATION GATE (menu browsing is never blocked, only ordering)
+    SPA->>SPA: emailVerified = claims.email_verified OR namespace/email_verified
+    SPA->>UL: loginWithRedirect acr_values=urn:pizza42:acr:verified-email<br/>(existing SSO session, no password prompt)
+    UL->>PL: Post-login Actions
+    Note over PL: Action 4: "verify email"
+    PL->>PL: acr_values contains urn:pizza42:acr:verified-email?
+    alt email already verified
+        PL->>PL: Return, no form
+    else not verified
+        PL->>UL: api.prompt.render(EMAIL_OTP_FORM_ID)
+        UL->>FORM: Render Form
+        FORM->>FORM: Flow "Generate OTP and Send email"
+        FORM-->>U: Email with 6-digit code (valid 5 min)
+        FORM-->>U: Step "Check your email" (code input, Resend link)
+        U->>FORM: Enter verification code
+        FORM->>FORM: Flow "Verify OTP and Update user"
+        alt code valid
+            FORM->>MGMT: PATCH user email_verified = true
+            FORM-->>UL: Ending screen: Resume authentication flow
+            UL->>PL: onContinuePostLogin
+            PL->>PL: Set ID token claim namespace/email_verified = true<br/>(event.user is stale mid-login, so state it explicitly)
+        else code invalid
+            FORM-->>U: Error, retry or Resend
+        end
+    end
+    UL-->>SPA: Code redirect back to #/checkout
+    SPA->>UL: /oauth/token
+    UL-->>SPA: New tokens (email verified)
+    Note over SPA: Guard flag pizza42.email.attempted prevents redirect loops<br/>if the Action is missing: shows "We couldn't verify your identity" + Try again
+
+    %% ============ 6. STEP-UP MFA ============
+    Note over U,API: 6. STEP-UP MFA (before address and card are collected)
+    SPA->>SPA: mfaDone = amr includes mfa OR namespace/mfa_done = true
+    SPA->>UL: loginWithRedirect acr_values=http://schemas.openid.net/pape/policies/2007/06/multi-factor
+    UL->>PL: Post-login Actions
+    Note over PL: Action 5: "stepup mfa"
+    PL->>PL: acr_values contains the multi-factor ACR?
+    alt MFA already done in this session (e.g. at signup)
+        PL->>PL: Add ID token claim namespace/mfa_done = true, no prompt
+    else user has an enrolled factor
+        PL->>MFA: challengeWithAny(otp, phone)
+        MFA-->>U: Enter code
+        U->>MFA: Code
+        MFA-->>PL: amr = mfa, acr = multi-factor
+    else no factor enrolled
+        PL->>MFA: enrollWithAny(otp, phone)
+        MFA-->>U: Enroll then challenge
+        U->>MFA: Complete
+        MFA-->>PL: amr = mfa
+    end
+    UL-->>SPA: Code redirect back to #/checkout
+    SPA->>UL: /oauth/token
+    UL-->>SPA: Tokens (MFA satisfied)
+    SPA->>SPA: Both gates pass, setStatus ready
+    SPA-->>U: "Identity verified" + Delivery and payment form
+    Note over SPA: Guard flag pizza42.stepup.attempted prevents loops if MFA not completed
+
+    %% ============ 7. PLACE ORDER ============
+    Note over U,API: 7. PLACE ORDER (API security with write:orders)
+    U->>SPA: Enter address + card, click Pay
+    SPA->>SPA: Client-side validation (Luhn, expiry, ZIP). Card data never leaves the browser (demo)
+    SPA->>SPA: getAccessTokenSilently(audience https://get-pizza42, scope write:orders)
+    SPA->>API: POST /orders<br/>Authorization: Bearer access_token<br/>body: items, total, address
+    API->>API: Validate JWT: signature via JWKS, issuer (custom domain), audience, exp
+    alt no or invalid token
+        API-->>SPA: 401 invalid_token
+        SPA-->>U: Error shown on checkout page
+    else valid token but missing write:orders
+        API-->>SPA: 403 insufficient_scope
+        SPA-->>U: Error shown on checkout page
+    else valid token with write:orders
+        API->>API: Read namespace/pizza42_customer_id from token claim (never from request body)
+        API-->>SPA: 200 success + orderId + customerId
+        SPA->>SPA: Clear cart
+        SPA-->>U: "Order placed. Order id confirmed by the API"
+    end
+    Note over API: Orders live in Pizza 42's own datastore (superficial here).<br/>Auth0 stores only the pointer pizza42_customer_id in app_metadata, never order data.
+
+    %% ============ 8. LOGOUT ============
+    Note over U,API: 8. LOGOUT
+    U->>SPA: Click Log out
+    SPA->>UL: logout returnTo = origin (/v2/logout)
+    UL->>UL: End Auth0 SSO session
+    UL-->>SPA: Redirect to home, logged-out menu view (back to section 1)
